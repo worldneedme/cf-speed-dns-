@@ -10,7 +10,7 @@ CF_ZONE_ID      =   os.environ["CF_ZONE_ID"]
 CF_DNS_NAME     =   os.environ["CF_DNS_NAME"]
 
 # pushplus_token
-PUSHPLUS_TOKEN  =   os.environ["PUSHPLUS_TOKEN"]
+PUSHPLUS_TOKEN  =   os.environ.get("PUSHPLUS_TOKEN", "")
 
 
 
@@ -46,6 +46,7 @@ def get_dns_records(name):
         return def_info
     else:
         print('Error fetching DNS records:', response.text)
+        return []
 
 # 更新 DNS 记录
 def update_dns_record(record_id, name, cf_ip):
@@ -70,6 +71,10 @@ def update_dns_record(record_id, name, cf_ip):
 
 # 消息推送
 def push_plus(content):
+    if not PUSHPLUS_TOKEN:
+        print("PUSHPLUS_TOKEN is empty, skip push notification.")
+        return
+
     url = 'http://www.pushplus.plus/send'
     data = {
         "token": PUSHPLUS_TOKEN,
@@ -86,11 +91,30 @@ def push_plus(content):
 def main():
     # 获取最新优选IP
     ip_addresses_str = get_cf_speed_test_ip()
-    ip_addresses = ip_addresses_str.split(',')
+    if not ip_addresses_str:
+        print("No speed test IPs fetched, stop DNS update.")
+        return
+
+    ip_addresses = [ip.strip() for ip in ip_addresses_str.split(',') if ip.strip()]
+    if not ip_addresses:
+        print("Speed test IP list is empty, stop DNS update.")
+        return
+
     dns_records = get_dns_records(CF_DNS_NAME)
+    if not dns_records:
+        print(f"No DNS records found for {CF_DNS_NAME}, stop DNS update.")
+        return
+
     push_plus_content = []
+    update_count = min(len(ip_addresses), len(dns_records))
+    if len(ip_addresses) != len(dns_records):
+        print(
+            f"IP count ({len(ip_addresses)}) and DNS record count ({len(dns_records)}) "
+            f"do not match, only update first {update_count} records."
+        )
+
     # 遍历 IP 地址列表
-    for index, ip_address in enumerate(ip_addresses):
+    for index, ip_address in enumerate(ip_addresses[:update_count]):
         # 执行 DNS 变更
         dns = update_dns_record(dns_records[index], CF_DNS_NAME, ip_address)
         push_plus_content.append(dns)
